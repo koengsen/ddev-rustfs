@@ -1,0 +1,34 @@
+name: rustfs
+
+project_files:
+  - docker-compose.rustfs.yaml
+
+ddev_version_constraint: ">= v1.24.10"
+
+post_install_actions:
+  - |
+    #ddev-description:RustFS add-on installed
+    echo ""
+    echo "RustFS was added to this project."
+    echo "Run: ddev restart"
+    echo ""
+    echo "URLs:"
+    echo "  API:     ${DDEV_PRIMARY_URL}:9000"
+    echo "  Console: ${DDEV_PRIMARY_URL}:9001"
+    echo ""
+    echo "Credentials:"
+    echo "  Access key: rustfsadmin"
+    echo "  Secret key: rustfsadmin"
+    echo ""
+    echo "Default bucket:"
+    echo "  AWS__DEFAULT_BUCKET=${AWS__DEFAULT_BUCKET:-rustfs}"
+    echo ""
+    echo "Laravel example (.env):"
+    echo "  AWS_ACCESS_KEY_ID=rustfsadmin"
+    echo "  AWS_SECRET_ACCESS_KEY=rustfsadmin"
+    echo "  AWS_DEFAULT_REGION=us-east-1"
+    echo "  AWS_BUCKET=${AWS__DEFAULT_BUCKET:-rustfs}"
+    echo "  AWS_ENDPOINT=http://rustfs:9000"
+    echo "  AWS_USE_PATH_STYLE_ENDPOINT=true"
+    echo ""
+

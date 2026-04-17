@@ -1,0 +1,122 @@
+#ddev-generated
+services:
+  rustfs_perms:
+    image: alpine:3.20
+    user: root
+    command: sh -c "chown -R 10001:10001 /data"
+    volumes:
+      - "rustfs-data:/data"
+
+  rustfs:
+    container_name: ddev-${DDEV_SITENAME}-rustfs
+    image: rustfs/rustfs:latest
+    hostname: ${DDEV_SITENAME}-rustfs
+    depends_on:
+      rustfs_perms:
+        condition: service_completed_successfully
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ENABLE: "true"
+      VIRTUAL_HOST: $DDEV_HOSTNAME
+      HTTP_EXPOSE: "9000:9000,9001:9001"
+      HTTPS_EXPOSE: "9000:9000,9001:9001"
+    command: --address :9000 --console-enable --access-key rustfsadmin --secret-key rustfsadmin /data
+    volumes:
+      - "rustfs-data:/data"
+      - ".:/mnt/ddev_config"
+      - ddev-global-cache:/mnt/ddev-global-cache
+    expose:
+      - "9000"
+      - "9001"
+    labels:
+      com.ddev.site-name: ${DDEV_SITENAME}
+      com.ddev.approot: ${DDEV_APPROOT}
+    restart: "no"
+    healthcheck:
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      # RustFS often returns 403 on "/" without auth; that's still "healthy".
+      # Use $$ to prevent docker-compose variable substitution.
+      test: ["CMD", "sh", "-c", "code=$$(wget -S -qO- http://127.0.0.1:9000/ 2>&1 | awk '/^  HTTP/{print $$2}' | tail -n1); test -n \"$$code\" -a \"$$code\" != \"000\""]
+    x-ddev:
+      describe-info: |
+        User: rustfsadmin
+        Pass: rustfsadmin
+        API: ${DDEV_PRIMARY_URL}:9000
+        Console: ${DDEV_PRIMARY_URL}:9001
+
+  rustfs_init_bucket:
+    image: amazon/aws-cli:2.15.56
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_DEFAULT_REGION: us-east-1
+      AWS__DEFAULT_BUCKET: ${AWS__DEFAULT_BUCKET-rustfs}
+    entrypoint:
+      - /bin/sh
+      - -lc
+      - |
+        set -u
+        bucket="$${AWS__DEFAULT_BUCKET}"
+        echo "Ensuring RustFS bucket exists: $$bucket"
+        i=0
+        while [ "$$i" -lt 60 ]; do
+          i=$$((i + 1))
+          if aws --endpoint-url http://rustfs:9000 s3api head-bucket --bucket "$$bucket" >/dev/null 2>&1; then
+            echo "Bucket exists: $$bucket"
+            break
+          fi
+          if aws --endpoint-url http://rustfs:9000 s3api create-bucket --bucket "$$bucket" >/dev/null 2>&1; then
+            echo "Bucket created: $$bucket"
+            break
+          fi
+          sleep 2
+        done
+        echo "Bucket init done: $$bucket"
+
+        echo "Ensuring public read bucket policy for: $$bucket"
+        cat >/tmp/public-read-policy.json <<'POLICY'
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "PublicReadGetObject",
+              "Effect": "Allow",
+              "Principal": "*",
+              "Action": [
+                "s3:GetObject"
+              ],
+              "Resource": [
+                "arn:aws:s3:::__BUCKET__/*"
+              ]
+            }
+          ]
+        }
+        POLICY
+        sed -i "s/__BUCKET__/$$bucket/g" /tmp/public-read-policy.json
+        aws --endpoint-url http://rustfs:9000 s3api put-bucket-policy --bucket "$$bucket" --policy file:///tmp/public-read-policy.json >/dev/null 2>&1 \
+          && echo "Bucket policy set: $$bucket" \
+          || echo "Bucket policy not set (may be unsupported)."
+
+        # Keep container running so ddev doesn't treat it as a failure.
+        tail -f /dev/null
+    restart: "no"
+    healthcheck:
+      interval: 10s
+      timeout: 2s
+      retries: 3
+      test: ["CMD", "true"]
+    labels:
+      com.ddev.site-name: ${DDEV_SITENAME}
+      com.ddev.approot: ${DDEV_APPROOT}
+
+volumes:
+  rustfs-data:
+    name: ddev-${DDEV_SITENAME}-rustfs-data
+    labels:
+      com.ddev.site-name: ${DDEV_SITENAME}
