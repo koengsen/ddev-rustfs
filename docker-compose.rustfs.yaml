@@ -33,13 +33,6 @@ services:
       com.ddev.site-name: ${DDEV_SITENAME}
       com.ddev.approot: ${DDEV_APPROOT}
     restart: "no"
-    healthcheck:
-      interval: 30s
-      timeout: 5s
-      retries: 10
-      # RustFS often returns 403 on "/" without auth; that's still "healthy".
-      # Use $$ to prevent docker-compose variable substitution.
-      test: ["CMD", "sh", "-c", "code=$$(wget -S -qO- http://127.0.0.1:9000/ 2>&1 | awk '/^  HTTP/{print $$2}' | tail -n1); test -n \"$$code\" -a \"$$code\" != \"000\""]
     x-ddev:
       describe-info: |
         User: rustfsadmin
@@ -51,7 +44,7 @@ services:
     image: amazon/aws-cli:2.15.56
     depends_on:
       rustfs:
-        condition: service_healthy
+        condition: service_started
     environment:
       AWS_ACCESS_KEY_ID: rustfsadmin
       AWS_SECRET_ACCESS_KEY: rustfsadmin
@@ -63,6 +56,17 @@ services:
       - |
         set -u
         bucket="$${AWS__DEFAULT_BUCKET}"
+        echo "Waiting for RustFS S3 endpoint..."
+        i=0
+        while [ "$$i" -lt 120 ]; do
+          i=$$((i + 1))
+          if aws --endpoint-url http://rustfs:9000 s3api list-buckets >/dev/null 2>&1; then
+            echo "RustFS is responding on S3 endpoint."
+            break
+          fi
+          sleep 1
+        done
+
         echo "Ensuring RustFS bucket exists: $$bucket"
         i=0
         while [ "$$i" -lt 60 ]; do
