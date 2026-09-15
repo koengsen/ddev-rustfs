@@ -1,11 +1,17 @@
 #ddev-generated
 services:
   rustfs_perms:
-    image: alpine:3.20
+    image: alpine:3.24
     user: root
-    command: sh -c "chown -R 10001:10001 /data && tail -f /dev/null"
+    command: sh -c "chown -R 10001:10001 /data && touch /tmp/ready && tail -f /dev/null"
     volumes:
       - "rustfs-data:/data"
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
 
   rustfs:
     container_name: ddev-${DDEV_SITENAME}-rustfs
@@ -13,7 +19,7 @@ services:
     hostname: ${DDEV_SITENAME}-rustfs
     depends_on:
       rustfs_perms:
-        condition: service_completed_successfully
+        condition: service_healthy
     environment:
       RUSTFS_ACCESS_KEY: rustfsadmin
       RUSTFS_SECRET_KEY: rustfsadmin
@@ -41,7 +47,7 @@ services:
         Console: ${DDEV_PRIMARY_URL}:9001
 
   rustfs_init_bucket:
-    image: amazon/aws-cli:2.15.56
+    image: amazon/aws-cli:2.36.45
     depends_on:
       rustfs:
         condition: service_started
